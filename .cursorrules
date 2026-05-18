@@ -1,0 +1,252 @@
+# Momentum App — Cursor Rules
+
+You are an expert React Native and Expo engineer helping build Momentum, a habit tracker app. The developer is non-technical in React Native and working solo. Your code must be clean, correct, and explainable.
+
+---
+
+## Core Rules
+
+**Do not waste tokens.**
+No lengthy explanations unless asked. Lead with the code or the answer.
+
+**Do not guess.**
+If a requirement is ambiguous, ask one specific question before writing code. Never invent behaviour that was not specified.
+
+**Do not do blind patchwork.**
+When something is broken, diagnose the root cause before writing a fix. Explain what caused it in one sentence, then fix it properly.
+
+**Think holistically.**
+Before implementing any feature, consider how it affects the database, the UI state, the navigation, the subscription logic, and offline behaviour together. Flag conflicts before writing code.
+
+**Think as an expert engineer.**
+Write production-quality code. No shortcuts that create technical debt. No copy-paste patterns that will break at scale.
+
+---
+
+## Tech Stack
+
+- **Framework:** Expo (React Native) with TypeScript
+- **Router:** Expo Router v3 (file-based routing)
+- **Database + Auth:** Supabase
+- **Subscriptions:** RevenueCat
+- **State management:** Prefer Zustand for global state, React Context for simple shared state
+- **Styling:** StyleSheet API (no NativeWind or styled-components unless instructed)
+- **Icons:** expo/vector-icons (Ionicons preferred)
+
+---
+
+## Project Structure
+
+```
+/app                    — Expo Router screens (file-based)
+  /(tabs)               — bottom tab screens
+    /today.tsx
+    /momentum.tsx
+    /insights.tsx
+    /habits.tsx
+  /create-habit.tsx
+  /habit/[id].tsx       — habit detail
+  /_layout.tsx
+/components             — reusable UI components
+/lib
+  /supabase.ts          — Supabase client
+  /revenuecat.ts        — RevenueCat setup
+  /streaks.ts           — streak calculation logic (pure functions)
+  /notifications.ts     — notification helpers
+/store                  — Zustand stores
+/types                  — TypeScript interfaces
+/constants              — colours, spacing, copy strings
+```
+
+---
+
+## Database Rules
+
+Always use Supabase for persistence. Never store critical data only in local state.
+
+Streak numbers are always calculated from `habit_logs` records. The `streak_cache` table is a performance cache only — never treat it as the source of truth.
+
+All dates are stored as the user's local date (YYYY-MM-DD), never UTC dates. Use the user's timezone from the `users` table when calculating which day a log belongs to.
+
+Late completion window: a habit logged before 3am counts for the previous calendar day. Always apply this rule when writing log entries.
+
+---
+
+## TypeScript Rules
+
+Always use strict TypeScript. No `any` types unless absolutely unavoidable, and comment why.
+
+Define all database row types in `/types/database.ts`. Define all app-level types in `/types/app.ts`.
+
+Example types to follow:
+
+```typescript
+// types/database.ts
+export type HabitStatus = 'done' | 'tiny_done' | 'recovered' | 'missed' | 'rest_day' | 'skipped'
+export type ScheduleType = 'daily' | 'weekdays' | 'weekends' | 'custom'
+export type HabitActiveStatus = 'active' | 'paused' | 'archived'
+
+export interface Habit {
+  habit_id: string
+  user_id: string
+  name: string
+  category: string | null
+  schedule_type: ScheduleType
+  schedule_days: number[]  // 0=Sun, 1=Mon ... 6=Sat
+  reminder_enabled: boolean
+  reminder_time: string | null  // HH:MM format
+  tiny_version: string
+  status: HabitActiveStatus
+  created_at: string
+  updated_at: string
+  archived_at: string | null
+}
+
+export interface HabitLog {
+  log_id: string
+  habit_id: string
+  user_id: string
+  date: string  // YYYY-MM-DD local date
+  status: HabitStatus
+  completed_at: string | null
+  is_retroactive_edit: boolean
+  source: 'app' | 'notification' | 'manual_edit'
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+```
+
+---
+
+## Streak Calculation Rules
+
+Implement in `/lib/streaks.ts` as pure functions (no side effects, no Supabase calls).
+
+**Perfect streak:** Counts consecutive scheduled days where status is `done`. Broken by `missed`. Paused by `rest_day`, `skipped`, `not_scheduled`.
+
+**Momentum streak:** Counts consecutive scheduled days where status is `done`, `tiny_done`, or `recovered`. Broken by `missed`. Paused by `rest_day`, `skipped`, `not_scheduled`.
+
+Always recalculate from the full log array. Never increment stored numbers.
+
+---
+
+## Status System
+
+```typescript
+// A habit scheduled for today but not yet logged = 'pending' (UI only, never stored)
+// not_scheduled = habit not due on this day of week (never stored, calculated)
+
+const STATUS_AFFECTS_PERFECT = {
+  done: 'continues',
+  tiny_done: 'does_not_continue',
+  recovered: 'does_not_continue',
+  missed: 'breaks',
+  rest_day: 'pauses',
+  skipped: 'pauses',
+} as const
+
+const STATUS_AFFECTS_MOMENTUM = {
+  done: 'continues',
+  tiny_done: 'continues',
+  recovered: 'continues',
+  missed: 'breaks',
+  rest_day: 'pauses',
+  skipped: 'pauses',
+} as const
+```
+
+---
+
+## Design System
+
+Define all values in `/constants/theme.ts`. Never hardcode colours or spacing inline.
+
+```typescript
+export const Colors = {
+  cream: '#F7F4EF',
+  white: '#FFFFFF',
+  textPrimary: '#1A1814',
+  textSecondary: '#6B6560',
+  textMuted: '#A09A94',
+  border: '#E8E3DC',
+
+  done: '#3D7A5E',
+  doneLight: '#E8F3ED',
+  tiny: '#5B9E8A',
+  tinyLight: '#E5F4F0',
+  momentum: '#3E6FA3',
+  momentumLight: '#E8EFF8',
+  missed: '#B85450',
+  missedLight: '#F5E8E8',
+  rest: '#7B6FA0',
+  restLight: '#EEE9F8',
+  skip: '#9E9E9E',
+  skipLight: '#F0F0F0',
+}
+
+export const Spacing = {
+  xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32,
+}
+
+export const Radius = {
+  sm: 8, md: 12, lg: 16, xl: 20, pill: 100,
+}
+```
+
+---
+
+## Copy Rules
+
+These strings must appear exactly as specified. Store in `/constants/copy.ts`.
+
+Never use: "failed", "broke your streak", "you missed", "back to zero", "lost"
+
+Always use variants of: "keep going", "a small step counts", "protect your momentum", "try the tiny version", "today is a good day to restart"
+
+---
+
+## Component Rules
+
+- Every component gets its own file in `/components`
+- Props must be fully typed with TypeScript interfaces
+- No inline anonymous functions in JSX for performance-sensitive lists (use useCallback)
+- Use FlatList not ScrollView for any list that could exceed 10 items
+- Always handle loading, empty, and error states in screens
+
+---
+
+## Supabase Rules
+
+- Initialise client once in `/lib/supabase.ts`
+- All database calls go through service functions in `/lib/` — never call Supabase directly from a component
+- Always handle errors explicitly — never assume a query succeeded
+- Use Row Level Security (RLS) on all tables — users can only access their own data
+
+---
+
+## Offline Rules
+
+Habit logging must work offline. Use a local queue (AsyncStorage or MMKV) that syncs to Supabase when connectivity is restored. Never block the user from marking a habit because of a network issue.
+
+---
+
+## RevenueCat Rules
+
+- Initialise in app startup, before any screen renders
+- Product identifier: `momentum_annual` (annual subscription)
+- Entitlement identifier: `premium`
+- Trial: 30 days, configured in App Store Connect and Google Play Console
+- Always check entitlement status on app foreground, not just on launch
+- Post-trial state: user can read history but cannot log new habits
+
+---
+
+## What NOT to Do
+
+- Do not install unnecessary packages — ask before adding any new dependency
+- Do not use class components — functional components and hooks only
+- Do not put business logic in components — keep components presentational
+- Do not use `console.log` in production code — use a proper logger or remove
+- Do not hardcode user IDs, habit IDs, or any test data in production code
+- Do not create files outside the structure above without flagging it first
