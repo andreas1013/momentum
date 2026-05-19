@@ -6,6 +6,7 @@ export default function RootLayout() {
     <>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="create-habit" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="dark" />
     </>

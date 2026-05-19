@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { fetchActiveHabits, signInTestUser } from '@/lib/habits';
 import type { Habit, ScheduleType } from '@/types/database';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -127,31 +128,27 @@ function HabitActionSheet({ habit, onClose, bottomInset }: HabitActionSheetProps
 }
 
 export default function HabitsScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedHabit, setSelectedHabit] = useState<Habit | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  async function loadData() {
+    setLoading(true);
+    await signInTestUser();
 
-    async function loadData() {
-      setLoading(true);
-      await signInTestUser();
+    const habitsData = await fetchActiveHabits();
 
-      const habitsData = await fetchActiveHabits();
-      if (cancelled) return;
+    setHabits(habitsData);
+    setLoading(false);
+  }
 
-      setHabits(habitsData);
-      setLoading(false);
-    }
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, []),
+  );
 
   const activeHabits = useMemo(
     () => habits.filter((habit) => habit.status === 'active'),
@@ -195,7 +192,7 @@ export default function HabitsScreen() {
           <Text style={styles.title}>My Habits</Text>
           <Pressable
             style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
-            onPress={() => undefined}>
+            onPress={() => router.push('/create-habit')}>
             <Ionicons name="add" size={26} color={Colors.white} />
           </Pressable>
         </View>
