@@ -1,3 +1,4 @@
+import { calculateStreaks, DayRecord, isScheduledToday } from '@/lib/streaks';
 import { supabase } from '@/lib/supabase';
 import type { Habit, HabitLog, HabitStatus } from '@/types/database';
 
@@ -86,4 +87,31 @@ export async function upsertHabitLog(params: UpsertHabitLogParams): Promise<Habi
   }
 
   return data;
+}
+
+export async function fetchHabitStreaks(
+  habit: Habit,
+): Promise<{ perfectCurrent: number; momentumCurrent: number }> {
+  const { data, error } = await supabase
+    .from('habit_logs')
+    .select('date, status')
+    .eq('habit_id', habit.habit_id)
+    .eq('user_id', TEST_USER_ID)
+    .order('date', { ascending: true });
+
+  if (error || !data) {
+    return { perfectCurrent: 0, momentumCurrent: 0 };
+  }
+
+  // Build DayRecord array including not_scheduled days
+  const records: DayRecord[] = data.map((row) => ({
+    date: row.date,
+    status: row.status,
+  }));
+
+  const result = calculateStreaks(records);
+  return {
+    perfectCurrent: result.perfectCurrent,
+    momentumCurrent: result.momentumCurrent,
+  };
 }

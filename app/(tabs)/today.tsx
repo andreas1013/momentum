@@ -1,5 +1,6 @@
 import {
   fetchActiveHabits,
+  fetchHabitStreaks,
   fetchTodayLogs,
   signInTestUser,
   upsertHabitLog,
@@ -63,6 +64,9 @@ export default function TodayScreen() {
   const todayString = useMemo(() => getLocalDateString(), []);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [logs, setLogs] = useState<Record<string, HabitLog>>({});
+  const [streaks, setStreaks] = useState<
+    Record<string, { perfectCurrent: number; momentumCurrent: number }>
+  >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,8 +92,15 @@ export default function TodayScreen() {
           return acc;
         }, {});
 
+        const streakResults = await Promise.all(habitsData.map((h) => fetchHabitStreaks(h)));
+        const streaksByHabitId = habitsData.reduce<typeof streaks>((acc, habit, index) => {
+          acc[habit.habit_id] = streakResults[index];
+          return acc;
+        }, {});
+
         setHabits(habitsData);
         setLogs(logsByHabitId);
+        setStreaks(streaksByHabitId);
       } catch {
         if (!cancelled) {
           setError('Failed to load habits');
@@ -172,11 +183,12 @@ export default function TodayScreen() {
       <HabitCard
         habit={item}
         log={logs[item.habit_id]}
+        streak={streaks[item.habit_id]}
         onDone={handleDone}
         onTiny={handleTiny}
       />
     ),
-    [logs, handleDone, handleTiny],
+    [logs, streaks, handleDone, handleTiny],
   );
 
   const keyExtractor = useCallback((item: Habit) => item.habit_id, []);
@@ -225,6 +237,7 @@ export default function TodayScreen() {
 type HabitCardProps = {
   habit: Habit;
   log?: HabitLog;
+  streak?: { perfectCurrent: number; momentumCurrent: number };
   onDone: (habit: Habit) => void;
   onTiny: (habit: Habit) => void;
 };
@@ -233,7 +246,7 @@ function getUiStatus(log?: HabitLog): UiHabitStatus {
   return log?.status ?? 'pending';
 }
 
-function HabitCard({ habit, log, onDone, onTiny }: HabitCardProps) {
+function HabitCard({ habit, log, streak, onDone, onTiny }: HabitCardProps) {
   const status = getUiStatus(log);
   const isDone = status === 'done';
   const isTiny = status === 'tiny_done';
@@ -262,7 +275,9 @@ function HabitCard({ habit, log, onDone, onTiny }: HabitCardProps) {
   return (
     <View style={cardStyle}>
       <Text style={styles.habitName}>{habit.name}</Text>
-      <Text style={styles.streaks}>🔥 0 days | ⚡ 0 days</Text>
+      <Text style={styles.streaks}>
+        🔥 {streak?.perfectCurrent ?? 0} days | ⚡ {streak?.momentumCurrent ?? 0} days
+      </Text>
 
       {showActions && (
         <View style={styles.actions}>
