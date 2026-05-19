@@ -1,6 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { fetchActiveHabits, signInTestUser } from '@/lib/habits';
+import type { Habit, ScheduleType } from '@/types/database';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
+  ListRenderItem,
   Modal,
   Pressable,
   ScrollView,
@@ -12,74 +17,22 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, Radius, Spacing } from '@/constants/theme';
 
-type ActiveHabit = {
-  id: string;
-  name: string;
-  schedule: string;
-  reminder: string;
-  tinyVersion: string;
-  perfectStreak: number;
-  momentumStreak: number;
-};
-
-type PausedHabit = {
-  id: string;
-  name: string;
-  schedule: string;
-  tinyVersion: string;
-};
-
-const ACTIVE_HABITS: ActiveHabit[] = [
-  {
-    id: 'walk',
-    name: 'Walk',
-    schedule: 'Weekdays',
-    reminder: '7:00 am',
-    tinyVersion: 'Walk for 3 minutes',
-    perfectStreak: 5,
-    momentumStreak: 5,
-  },
-  {
-    id: 'read',
-    name: 'Read',
-    schedule: 'Every day',
-    reminder: '8:00 pm',
-    tinyVersion: 'Read one page',
-    perfectStreak: 3,
-    momentumStreak: 3,
-  },
-  {
-    id: 'drink-water',
-    name: 'Drink water',
-    schedule: 'Every day',
-    reminder: '8:00 am',
-    tinyVersion: 'Drink one glass',
-    perfectStreak: 9,
-    momentumStreak: 9,
-  },
-  {
-    id: 'sleep',
-    name: 'Sleep by 10pm',
-    schedule: 'Every day',
-    reminder: '9:30 pm',
-    tinyVersion: 'In bed by 10:30pm',
-    perfectStreak: 2,
-    momentumStreak: 7,
-  },
-];
-
-const PAUSED_HABITS: PausedHabit[] = [
-  {
-    id: 'meditate',
-    name: 'Meditate',
-    schedule: 'Every day',
-    tinyVersion: 'Breathe for 1 minute',
-  },
-];
+function formatScheduleLabel(scheduleType: ScheduleType): string {
+  switch (scheduleType) {
+    case 'daily':
+      return 'Every day';
+    case 'weekdays':
+      return 'Weekdays';
+    case 'weekends':
+      return 'Weekends';
+    case 'custom':
+      return 'Custom schedule';
+  }
+}
 
 type HabitCardProps = {
-  habit: ActiveHabit;
-  onMenuPress: (habit: ActiveHabit) => void;
+  habit: Habit;
+  onMenuPress: (habit: Habit) => void;
 };
 
 function ActiveHabitCard({ habit, onMenuPress }: HabitCardProps) {
@@ -92,13 +45,9 @@ function ActiveHabitCard({ habit, onMenuPress }: HabitCardProps) {
       <View style={styles.habitCardRow}>
         <View style={styles.habitCardContent}>
           <Text style={styles.habitName}>{habit.name}</Text>
-          <Text style={styles.habitMeta}>
-            {habit.schedule} · {habit.reminder}
-          </Text>
-          <Text style={styles.habitMeta}>Tiny: {habit.tinyVersion}</Text>
-          <Text style={styles.habitStreaks}>
-            🔥 {habit.perfectStreak} days | ⚡ {habit.momentumStreak} days
-          </Text>
+          <Text style={styles.habitMeta}>{formatScheduleLabel(habit.schedule_type)}</Text>
+          <Text style={styles.habitMeta}>Tiny: {habit.tiny_version}</Text>
+          <Text style={styles.habitStreaks}>🔥 0 days ⚡ 0 days</Text>
         </View>
         <Pressable
           onPress={handleMenuPress}
@@ -112,7 +61,7 @@ function ActiveHabitCard({ habit, onMenuPress }: HabitCardProps) {
 }
 
 type PausedHabitCardProps = {
-  habit: PausedHabit;
+  habit: Habit;
 };
 
 function PausedHabitCard({ habit }: PausedHabitCardProps) {
@@ -121,8 +70,8 @@ function PausedHabitCard({ habit }: PausedHabitCardProps) {
       <View style={styles.habitCardRow}>
         <View style={styles.habitCardContent}>
           <Text style={styles.habitName}>{habit.name}</Text>
-          <Text style={styles.habitMeta}>{habit.schedule}</Text>
-          <Text style={styles.habitMeta}>Tiny: {habit.tinyVersion}</Text>
+          <Text style={styles.habitMeta}>{formatScheduleLabel(habit.schedule_type)}</Text>
+          <Text style={styles.habitMeta}>Tiny: {habit.tiny_version}</Text>
         </View>
         <Pressable
           style={({ pressed }) => [styles.resumeButton, pressed && styles.resumeButtonPressed]}>
@@ -134,7 +83,7 @@ function PausedHabitCard({ habit }: PausedHabitCardProps) {
 }
 
 type HabitActionSheetProps = {
-  habit: ActiveHabit | null;
+  habit: Habit | null;
   onClose: () => void;
   bottomInset: number;
 };
@@ -179,15 +128,63 @@ function HabitActionSheet({ habit, onClose, bottomInset }: HabitActionSheetProps
 
 export default function HabitsScreen() {
   const insets = useSafeAreaInsets();
-  const [sheetHabit, setSheetHabit] = useState<ActiveHabit | null>(null);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedHabit, setSelectedHabit] = useState<Habit | null>(null);
 
-  const handleMenuPress = useCallback((habit: ActiveHabit) => {
-    setSheetHabit(habit);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadData() {
+      setLoading(true);
+      await signInTestUser();
+
+      const habitsData = await fetchActiveHabits();
+      if (cancelled) return;
+
+      setHabits(habitsData);
+      setLoading(false);
+    }
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const activeHabits = useMemo(
+    () => habits.filter((habit) => habit.status === 'active'),
+    [habits],
+  );
+
+  const pausedHabits = useMemo(
+    () => habits.filter((habit) => habit.status === 'paused'),
+    [habits],
+  );
+
+  const handleMenuPress = useCallback((habit: Habit) => {
+    setSelectedHabit(habit);
   }, []);
 
   const handleCloseSheet = useCallback(() => {
-    setSheetHabit(null);
+    setSelectedHabit(null);
   }, []);
+
+  const renderActiveItem: ListRenderItem<Habit> = useCallback(
+    ({ item }) => <ActiveHabitCard habit={item} onMenuPress={handleMenuPress} />,
+    [handleMenuPress],
+  );
+
+  const keyExtractor = useCallback((item: Habit) => item.habit_id, []);
+
+  if (loading) {
+    return (
+      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator color={Colors.done} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -203,23 +200,37 @@ export default function HabitsScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.sectionLabel}>Active · 4 habits</Text>
-        <View style={styles.cardList}>
-          {ACTIVE_HABITS.map((habit) => (
-            <ActiveHabitCard key={habit.id} habit={habit} onMenuPress={handleMenuPress} />
-          ))}
-        </View>
+        {activeHabits.length === 0 ? (
+          <Text style={styles.emptyStateText}>No habits yet. Tap + to create your first habit.</Text>
+        ) : (
+          <>
+            <Text style={styles.sectionLabel}>Active · {activeHabits.length} habits</Text>
+            <FlatList
+              data={activeHabits}
+              keyExtractor={keyExtractor}
+              renderItem={renderActiveItem}
+              scrollEnabled={false}
+              contentContainerStyle={styles.cardList}
+            />
+          </>
+        )}
 
-        <Text style={styles.sectionLabel}>Paused · 1 habit</Text>
-        <View style={styles.cardList}>
-          {PAUSED_HABITS.map((habit) => (
-            <PausedHabitCard key={habit.id} habit={habit} />
-          ))}
-        </View>
+        {pausedHabits.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>
+              Paused · {pausedHabits.length} {pausedHabits.length === 1 ? 'habit' : 'habits'}
+            </Text>
+            <View style={styles.cardList}>
+              {pausedHabits.map((habit) => (
+                <PausedHabitCard key={habit.habit_id} habit={habit} />
+              ))}
+            </View>
+          </>
+        )}
       </ScrollView>
 
       <HabitActionSheet
-        habit={sheetHabit}
+        habit={selectedHabit}
         onClose={handleCloseSheet}
         bottomInset={insets.bottom}
       />
@@ -231,6 +242,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: Colors.cream,
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -267,6 +282,13 @@ const styles = StyleSheet.create({
   cardList: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.sm,
+  },
+  emptyStateText: {
+    fontSize: 15,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl,
   },
   habitCard: {
     backgroundColor: Colors.white,

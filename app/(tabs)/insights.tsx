@@ -1,18 +1,33 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  fetchActiveHabits,
+  fetchAllLogs,
+  signInTestUser,
+} from '@/lib/habits';
+import { calculateStreaks, type DayRecord } from '@/lib/streaks';
+import type { Habit, HabitLog, HabitStatus } from '@/types/database';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, Radius, Spacing } from '@/constants/theme';
 
+const TEST_USER_ID = '3f550a2e-613e-4fa4-93ed-b0180ab5f7b2';
 const BAR_CHART_MAX_HEIGHT = 120;
-
-const WEEKLY_BARS = [
-  { day: 'Mon', value: 100 },
-  { day: 'Tue', value: 75 },
-  { day: 'Wed', value: 100 },
-  { day: 'Thu', value: 75 },
-  { day: 'Fri', value: 100 },
-  { day: 'Sat', value: 50 },
-  { day: 'Sun', value: 50 },
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
 ] as const;
 
 type StatCardProps = {
@@ -20,6 +35,11 @@ type StatCardProps = {
   value: string;
   subtext: string;
   valueColor?: string;
+};
+
+type WeeklyBar = {
+  day: string;
+  value: number;
 };
 
 function StatCard({ label, value, subtext, valueColor }: StatCardProps) {
@@ -32,11 +52,229 @@ function StatCard({ label, value, subtext, valueColor }: StatCardProps) {
   );
 }
 
+function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function isCompletingStatus(status: HabitStatus): boolean {
+  return status === 'done' || status === 'tiny_done' || status === 'recovered';
+}
+
+function getLast7DateStrings(from: Date): string[] {
+  const dates: string[] = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const date = new Date(from);
+    date.setDate(from.getDate() - offset);
+    dates.push(getLocalDateString(date));
+  }
+  return dates;
+}
+
+function formatWeekSubtitle(weekDates: string[]): string {
+  if (weekDates.length === 0) return 'This week';
+
+  const first = new Date(`${weekDates[0]}T12:00:00`);
+  const last = new Date(`${weekDates[weekDates.length - 1]}T12:00:00`);
+  const monthName = first.toLocaleDateString('en-GB', { month: 'long' });
+
+  return `Week of ${first.getDate()}–${last.getDate()} ${monthName}`;
+}
+
+function isDateInCurrentMonth(dateStr: string, now: Date): boolean {
+  const [year, month] = dateStr.split('-').map(Number);
+  return year === now.getFullYear() && month === now.getMonth() + 1;
+}
+
+function computeWeeklyBars(
+  habits: Habit[],
+  logs: HabitLog[],
+  weekDates: string[],
+): WeeklyBar[] {
+  return weekDates.map((dateStr) => {
+    const date = new Date(`${dateStr}T12:00:00`);
+    const completed = logs.filter(
+      (log) => log.date === dateStr && isCompletingStatus(log.status),
+    ).length;
+    const value =
+      habits.length === 0 ? 0 : Math.round((completed / habits.length) * 100);
+
+    return {
+      day: DAY_LABELS[date.getDay()],
+      value,
+    };
+  });
+}
+
+function computeInsights(habits: Habit[], logs: HabitLog[], now: Date) {
+  const weekDates = getLast7DateStrings(now);
+  const weekDateSet = new Set(weekDates);
+  const habitCount = habits.length;
+  const scheduledThisWeek = habitCount * 7;
+
+  const weekLogs = logs.filter((log) => weekDateSet.has(log.date));
+  const weekCompleted = weekLogs.filter((log) => isCompletingStatus(log.status)).length;
+
+  const weeklyCompletion =
+    scheduledThisWeek === 0
+      ? 0
+      : Math.round((weekCompleted / scheduledThisWeek) * 100);
+
+  const weeklyBars = computeWeeklyBars(habits, logs, weekDates);
+
+  const daysElapsedThisMonth = now.getDate();
+  const monthLogs = logs.filter((log) => isDateInCurrentMonth(log.date, now));
+
+  let strongestHabit = habits[0]?.name ?? '—';
+  let strongestWeekPercent = 0;
+  let highestMonthScore = -1;
+
+  for (const habit of habits) {
+    const habitWeekLogs = weekLogs.filter((log) => log.habit_id === habit.habit_id);
+    const habitWeekCompleted = habitWeekLogs.filter((log) =>
+      isCompletingStatus(log.status),
+    ).length;
+    const weekPercent =
+      habitCount === 0 ? 0 : Math.round((habitWeekCompleted / 7) * 100);
+
+    const habitMonthCompleted = monthLogs.filter(
+      (log) => log.habit_id === habit.habit_id && isCompletingStatus(log.status),
+    ).length;
+    const monthScore =
+      daysElapsedThisMonth === 0 ? 0 : habitMonthCompleted / daysElapsedThisMonth;
+
+    if (monthScore > highestMonthScore) {
+      highestMonthScore = monthScore;
+      strongestHabit = habit.name;
+      strongestWeekPercent = weekPercent;
+    }
+  }
+
+  let maxMomentumCurrent = 0;
+  let maxMomentumBest = 0;
+
+  for (const habit of habits) {
+    const habitLogs = logs
+      .filter((log) => log.habit_id === habit.habit_id)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const records: DayRecord[] = habitLogs.map((log) => ({
+      date: log.date,
+      status: log.status,
+    }));
+
+    const streaks = calculateStreaks(records);
+    maxMomentumCurrent = Math.max(maxMomentumCurrent, streaks.momentumCurrent);
+    maxMomentumBest = Math.max(maxMomentumBest, streaks.momentumBest);
+  }
+
+  const tinyVersionCount = logs.filter((log) => log.status === 'tiny_done').length;
+
+  let needsAttentionHabit = habits[0]?.name ?? '—';
+  let missedThisMonth = 0;
+
+  for (const habit of habits) {
+    const missedCount = monthLogs.filter(
+      (log) => log.habit_id === habit.habit_id && log.status === 'missed',
+    ).length;
+
+    if (missedCount > missedThisMonth) {
+      missedThisMonth = missedCount;
+      needsAttentionHabit = habit.name;
+    }
+  }
+
+  const dayOfWeekStats = Array.from({ length: 7 }, () => ({
+    total: 0,
+    completed: 0,
+  }));
+
+  for (const log of logs) {
+    const dayIndex = new Date(`${log.date}T12:00:00`).getDay();
+    dayOfWeekStats[dayIndex].total += 1;
+    if (isCompletingStatus(log.status)) {
+      dayOfWeekStats[dayIndex].completed += 1;
+    }
+  }
+
+  let bestDayIndex = 0;
+  let bestDayRate = -1;
+
+  dayOfWeekStats.forEach((stats, index) => {
+    if (stats.total === 0) return;
+    const rate = stats.completed / stats.total;
+    if (rate > bestDayRate) {
+      bestDayRate = rate;
+      bestDayIndex = index;
+    }
+  });
+
+  const bestDayName = WEEKDAY_NAMES[bestDayIndex];
+  const bestDayPercent = bestDayRate < 0 ? 0 : Math.round(bestDayRate * 100);
+
+  return {
+    weekDates,
+    weeklyCompletion,
+    weekCompleted,
+    scheduledThisWeek,
+    weeklyBars,
+    strongestHabit,
+    strongestWeekPercent,
+    momentumStreakCurrent: maxMomentumCurrent,
+    momentumStreakBest: maxMomentumBest,
+    tinyVersionCount,
+    needsAttentionHabit,
+    missedThisMonth,
+    bestDayName,
+    bestDayPercent,
+  };
+}
+
 export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [logs, setLogs] = useState<HabitLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Empty state skipped for now — always show insights data.
-  const showInsights = true;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadData() {
+      setLoading(true);
+      await signInTestUser();
+
+      const [habitsData, logsData] = await Promise.all([
+        fetchActiveHabits(),
+        fetchAllLogs(TEST_USER_ID),
+      ]);
+
+      if (cancelled) return;
+
+      setHabits(habitsData);
+      setLogs(logsData);
+      setLoading(false);
+    }
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const insights = useMemo(() => computeInsights(habits, logs, new Date()), [habits, logs]);
+  const showInsights = logs.length >= 5;
+  const weekSubtitle = formatWeekSubtitle(insights.weekDates);
+
+  if (loading) {
+    return (
+      <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator color={Colors.done} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -45,19 +283,22 @@ export default function InsightsScreen() {
         showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>Insights</Text>
-          <Text style={styles.subtitle}>Week of 12–18 May</Text>
+          <Text style={styles.subtitle}>{weekSubtitle}</Text>
         </View>
 
         {showInsights ? (
           <>
             <View style={styles.sectionCard}>
               <Text style={styles.cardLabel}>Weekly completion</Text>
-              <Text style={styles.weeklyValue}>78%</Text>
-              <Text style={styles.weeklySubtext}>22 of 28 scheduled habits completed this week</Text>
+              <Text style={styles.weeklyValue}>{insights.weeklyCompletion}%</Text>
+              <Text style={styles.weeklySubtext}>
+                {insights.weekCompleted} of {insights.scheduledThisWeek} scheduled habits
+                completed this week
+              </Text>
 
               <View style={styles.barChart}>
-                {WEEKLY_BARS.map(({ day, value }) => (
-                  <View key={day} style={styles.barColumn}>
+                {insights.weeklyBars.map(({ day, value }, index) => (
+                  <View key={insights.weekDates[index]} style={styles.barColumn}>
                     <View style={styles.barTrack}>
                       <View
                         style={[
@@ -78,33 +319,41 @@ export default function InsightsScreen() {
             <View style={styles.statRow}>
               <StatCard
                 label="Strongest habit"
-                value="💧 Drink water"
-                subtext="100% this week"
+                value={insights.strongestHabit}
+                subtext={`${insights.strongestWeekPercent}% this week`}
               />
-              <StatCard label="Best day" value="Monday" subtext="94% avg on Mondays" />
+              <StatCard
+                label="Best day"
+                value={insights.bestDayName}
+                subtext={`${insights.bestDayPercent}% avg on ${insights.bestDayName}s`}
+              />
             </View>
 
             <View style={styles.statRow}>
               <StatCard
                 label="Momentum streak"
-                value="9 ⚡"
-                subtext="Best ever: 14 days"
+                value={`${insights.momentumStreakCurrent} ⚡`}
+                subtext={`Best ever: ${insights.momentumStreakBest} days`}
               />
-              <StatCard label="Tiny versions" value="4" subtext="Kept momentum going" />
+              <StatCard
+                label="Tiny versions"
+                value={String(insights.tinyVersionCount)}
+                subtext="Kept momentum going"
+              />
             </View>
 
             <View style={styles.attentionCard}>
               <Text style={styles.cardLabel}>Needs attention</Text>
-              <Text style={styles.attentionValue}>Read</Text>
+              <Text style={styles.attentionValue}>{insights.needsAttentionHabit}</Text>
               <Text style={styles.attentionSubtext}>
-                Missed 3 times this month. Consider making it smaller.
+                Missed {insights.missedThisMonth} times this month. Consider making it smaller.
               </Text>
             </View>
           </>
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyStateText}>
-              Insights will appear after a few days of tracking
+              Insights will appear after a few days of tracking.
             </Text>
           </View>
         )}
@@ -117,6 +366,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: Colors.cream,
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   header: {
     paddingHorizontal: Spacing.lg,

@@ -141,3 +141,18 @@ export async function fetchMonthLogs(
 
   return data ?? [];
 }
+
+export async function fetchAllLogs(userId: string): Promise<HabitLog[]> {
+  const { data, error } = await supabase
+    .from('habit_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('fetchAllLogs:', error);
+    return [];
+  }
+
+  return data ?? [];
+}
