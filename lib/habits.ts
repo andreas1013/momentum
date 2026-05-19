@@ -1,4 +1,4 @@
-import { calculateStreaks, DayRecord, isScheduledToday } from '@/lib/streaks';
+import { calculateStreaks, DayRecord, getMonthlyConsistency, isScheduledToday } from '@/lib/streaks';
 import { supabase } from '@/lib/supabase';
 import type { Habit, HabitLog, HabitStatus } from '@/types/database';
 
@@ -114,4 +114,30 @@ export async function fetchHabitStreaks(
     perfectCurrent: result.perfectCurrent,
     momentumCurrent: result.momentumCurrent,
   };
+}
+
+export async function fetchMonthLogs(
+  habitId: string,
+  year: number,
+  month: number,
+): Promise<HabitLog[]> {
+  const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const lastDayStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  const { data, error } = await supabase
+    .from('habit_logs')
+    .select('*')
+    .eq('habit_id', habitId)
+    .eq('user_id', TEST_USER_ID)
+    .gte('date', firstDay)
+    .lte('date', lastDayStr)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('fetchMonthLogs:', error);
+    return [];
+  }
+
+  return data ?? [];
 }
