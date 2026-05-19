@@ -5,8 +5,15 @@ import {
   signInTestUser,
   upsertHabitLog,
 } from '@/lib/habits';
+import {
+  dismissRecovery,
+  fetchMissedHabits,
+  fetchRepeatedMissHabits,
+  getYesterdayDateString,
+  logRecovery,
+} from '@/lib/recovery';
 import type { Habit, HabitLog, HabitStatus } from '@/types/database';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -67,8 +74,12 @@ export default function TodayScreen() {
   const [streaks, setStreaks] = useState<
     Record<string, { perfectCurrent: number; momentumCurrent: number }>
   >({});
+  const [missedHabits, setMissedHabits] = useState<Habit[]>([]);
+  const [repeatedMissHabits, setRepeatedMissHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<FlatList<Habit>>(null);
+  const yesterday = useMemo(() => getYesterdayDateString(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,7 +103,12 @@ export default function TodayScreen() {
           return acc;
         }, {});
 
-        const streakResults = await Promise.all(habitsData.map((h) => fetchHabitStreaks(h)));
+        const [streakResults, missed, repeated] = await Promise.all([
+          Promise.all(habitsData.map((h) => fetchHabitStreaks(h))),
+          fetchMissedHabits(habitsData),
+          fetchRepeatedMissHabits(habitsData),
+        ]);
+
         const streaksByHabitId = habitsData.reduce<typeof streaks>((acc, habit, index) => {
           acc[habit.habit_id] = streakResults[index];
           return acc;
@@ -101,6 +117,8 @@ export default function TodayScreen() {
         setHabits(habitsData);
         setLogs(logsByHabitId);
         setStreaks(streaksByHabitId);
+        setMissedHabits(missed);
+        setRepeatedMissHabits(repeated);
       } catch {
         if (!cancelled) {
           setError('Failed to load habits');
@@ -193,6 +211,83 @@ export default function TodayScreen() {
 
   const keyExtractor = useCallback((item: Habit) => item.habit_id, []);
 
+  const removeHabitFromRecovery = useCallback((habitId: string) => {
+    setMissedHabits((current) => current.filter((habit) => habit.habit_id !== habitId));
+    setRepeatedMissHabits((current) => current.filter((habit) => habit.habit_id !== habitId));
+  }, []);
+
+  const applyRecoveredLog = useCallback(
+    (habit: Habit) => {
+      const now = new Date().toISOString();
+      setLogs((current) => ({
+        ...current,
+        [habit.habit_id]: {
+          log_id: current[habit.habit_id]?.log_id ?? '',
+          habit_id: habit.habit_id,
+          user_id: habit.user_id,
+          date: todayString,
+          status: 'recovered',
+          completed_at: null,
+          is_retroactive_edit: false,
+          source: 'app',
+          notes: current[habit.habit_id]?.notes ?? null,
+          created_at: current[habit.habit_id]?.created_at ?? now,
+          updated_at: now,
+        },
+      }));
+    },
+    [todayString],
+  );
+
+  const handleRecoveryTiny = useCallback(
+    async (habit: Habit) => {
+      const success = await logRecovery({
+        habit,
+        missedDate: yesterday,
+        recoveryType: 'tiny_version',
+      });
+      if (success) {
+        removeHabitFromRecovery(habit.habit_id);
+        applyRecoveredLog(habit);
+      }
+    },
+    [yesterday, removeHabitFromRecovery, applyRecoveredLog],
+  );
+
+  const handleDismissRecovery = useCallback(
+    async (habit: Habit) => {
+      await dismissRecovery({ habit, missedDate: yesterday });
+      removeHabitFromRecovery(habit.habit_id);
+    },
+    [yesterday, removeHabitFromRecovery],
+  );
+
+  const handleDismissAllRecovery = useCallback(async () => {
+    await Promise.all(
+      missedHabits.map((habit) => dismissRecovery({ habit, missedDate: yesterday })),
+    );
+    setMissedHabits([]);
+    setRepeatedMissHabits([]);
+  }, [missedHabits, yesterday]);
+
+  const handleSeeMissedHabits = useCallback(() => {
+    const index = habits.findIndex((habit) => {
+      const status = logs[habit.habit_id]?.status;
+      return status !== 'done' && status !== 'tiny_done' && status !== 'recovered';
+    });
+    if (index >= 0) {
+      listRef.current?.scrollToIndex({ index, animated: true });
+    }
+  }, [habits, logs]);
+
+  const visibleRepeatedMiss = useMemo(
+    () =>
+      repeatedMissHabits.filter((habit) =>
+        missedHabits.some((missed) => missed.habit_id === habit.habit_id),
+      ),
+    [repeatedMissHabits, missedHabits],
+  );
+
   if (loading) {
     return (
       <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
@@ -223,12 +318,25 @@ export default function TodayScreen() {
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
 
+      {missedHabits.length > 0 ? (
+        <RecoveryBanner
+          missedHabits={missedHabits}
+          repeatedMissHabits={visibleRepeatedMiss}
+          onRecoveryTiny={handleRecoveryTiny}
+          onDismiss={handleDismissRecovery}
+          onDismissAll={handleDismissAllRecovery}
+          onSeeMissedHabits={handleSeeMissedHabits}
+        />
+      ) : null}
+
       <FlatList
+        ref={listRef}
         data={habits}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        onScrollToIndexFailed={() => undefined}
       />
     </View>
   );
@@ -241,6 +349,101 @@ type HabitCardProps = {
   onDone: (habit: Habit) => void;
   onTiny: (habit: Habit) => void;
 };
+
+type RecoveryBannerProps = {
+  missedHabits: Habit[];
+  repeatedMissHabits: Habit[];
+  onRecoveryTiny: (habit: Habit) => void;
+  onDismiss: (habit: Habit) => void;
+  onDismissAll: () => void;
+  onSeeMissedHabits: () => void;
+};
+
+function RecoveryBanner({
+  missedHabits,
+  repeatedMissHabits,
+  onRecoveryTiny,
+  onDismiss,
+  onDismissAll,
+  onSeeMissedHabits,
+}: RecoveryBannerProps) {
+  const isSingle = missedHabits.length === 1;
+  const singleHabit = missedHabits[0];
+
+  return (
+    <View style={styles.recoveryBannerContainer}>
+      <View style={styles.recoveryBanner}>
+        {isSingle ? (
+          <>
+            <Text style={styles.recoveryTitle}>Keep your momentum</Text>
+            <Text style={styles.recoveryText}>
+              You missed {singleHabit.name} yesterday. The tiny version keeps your streak alive.
+            </Text>
+            <View style={styles.recoveryActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.recoveryPrimaryButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={() => onRecoveryTiny(singleHabit)}>
+                <Text style={styles.recoveryPrimaryButtonText} numberOfLines={1}>
+                  {singleHabit.tiny_version}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.recoveryGhostButton, pressed && styles.buttonPressed]}
+                onPress={() => onDismiss(singleHabit)}>
+                <Text style={styles.recoveryGhostButtonText}>Dismiss</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.recoveryTitle}>A few habits need attention</Text>
+            <Text style={styles.recoveryText}>
+              You missed {missedHabits.length} habits yesterday. Start with one small action.
+            </Text>
+            <View style={styles.recoveryActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.recoveryPrimaryButton,
+                  pressed && styles.buttonPressed,
+                ]}
+                onPress={onSeeMissedHabits}>
+                <Text style={styles.recoveryPrimaryButtonText}>See missed habits</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.recoveryGhostButton, pressed && styles.buttonPressed]}
+                onPress={onDismissAll}>
+                <Text style={styles.recoveryGhostButtonText}>Dismiss all</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
+      </View>
+
+      {repeatedMissHabits.map((habit) => (
+        <View key={habit.habit_id} style={styles.repeatedMissBanner}>
+          <Text style={styles.recoveryText}>
+            {habit.name} has been missed 2 days in a row. Want to make it easier?
+          </Text>
+          <View style={styles.recoveryActions}>
+            <Pressable
+              style={({ pressed }) => [styles.recoveryGhostButton, pressed && styles.buttonPressed]}
+              onPress={() => undefined}>
+              <Text style={styles.recoveryGhostButtonText}>Make it smaller</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.recoveryGhostButton, pressed && styles.buttonPressed]}
+              onPress={() => onDismiss(habit)}>
+              <Text style={styles.recoveryGhostButtonText}>Keep as is</Text>
+            </Pressable>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function getUiStatus(log?: HabitLog): UiHabitStatus {
   return log?.status ?? 'pending';
@@ -437,5 +640,67 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: Colors.missed,
+  },
+  recoveryBannerContainer: {
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  recoveryBanner: {
+    backgroundColor: Colors.momentumLight,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.momentum,
+    borderRadius: Radius.md,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  repeatedMissBanner: {
+    backgroundColor: Colors.missedLight,
+    borderRadius: Radius.md,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  recoveryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  recoveryText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  recoveryActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  recoveryPrimaryButton: {
+    flex: 1,
+    backgroundColor: Colors.momentum,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recoveryPrimaryButtonText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  recoveryGhostButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+  },
+  recoveryGhostButtonText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

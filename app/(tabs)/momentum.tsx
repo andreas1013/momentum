@@ -1,11 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { fetchActiveHabits, fetchMonthLogs, signInTestUser } from '@/lib/habits';
-import { calculateStreaks, getMonthlyConsistency, isScheduledToday } from '@/lib/streaks';
+import {
+  dismissRecovery,
+  fetchMissedHabits,
+  getYesterdayDateString,
+  logRecovery,
+} from '@/lib/recovery';
+import { getMonthlyConsistency, isScheduledToday } from '@/lib/streaks';
 import type { DayRecord } from '@/lib/streaks';
 import type { Habit, HabitLog } from '@/types/database';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -43,6 +50,16 @@ function formatDateString(year: number, month: number, day: number): string {
 
 function formatMonthYear(year: number, month: number): string {
   return new Date(year, month - 1, 1).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function formatDisplayDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
@@ -174,18 +191,138 @@ function getSummaryTextColor(percent: number): string {
 type GridCellProps = {
   status: CellStatus;
   isToday: boolean;
+  onPress?: () => void;
 };
 
-function GridCell({ status, isToday }: GridCellProps) {
+function GridCell({ status, isToday, onPress }: GridCellProps) {
   const cell = (
     <View style={[styles.cell, cellStatusStyles[status]]}>
       {status === 'not_scheduled' && <Text style={styles.notScheduledMark}>–</Text>}
     </View>
   );
 
-  if (!isToday) return <View style={styles.cellSlot}>{cell}</View>;
+  const slotStyle = [styles.cellSlot, isToday && styles.todayRing];
 
-  return <View style={[styles.cellSlot, styles.todayRing]}>{cell}</View>;
+  if (onPress) {
+    return (
+      <Pressable
+        style={({ pressed }) => [slotStyle, pressed && styles.cellPressed]}
+        onPress={onPress}>
+        {cell}
+      </Pressable>
+    );
+  }
+
+  return <View style={slotStyle}>{cell}</View>;
+}
+
+type MissedDaySelection = {
+  habit: Habit;
+  date: string;
+};
+
+type MissedDaySheetProps = {
+  selection: MissedDaySelection;
+  bottomInset: number;
+  onClose: () => void;
+  onTinyRecovery: () => void;
+  onDismiss: () => void;
+};
+
+function MissedDaySheet({
+  selection,
+  bottomInset,
+  onClose,
+  onTinyRecovery,
+  onDismiss,
+}: MissedDaySheetProps) {
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.modalBackdrop} onPress={onClose} />
+        <View style={[styles.sheet, { paddingBottom: bottomInset + Spacing.lg }]}>
+          <Text style={styles.sheetTitle}>{selection.habit.name}</Text>
+          <Text style={styles.sheetSubtext}>You missed this day.</Text>
+          <Text style={styles.sheetDate}>{formatDisplayDate(selection.date)}</Text>
+
+          <Pressable
+            style={({ pressed }) => [styles.sheetPrimaryButton, pressed && styles.buttonPressed]}
+            onPress={onTinyRecovery}>
+            <Text style={styles.sheetPrimaryButtonText}>Do the tiny version today</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.sheetOutlineButton, pressed && styles.buttonPressed]}
+            onPress={onDismiss}>
+            <Text style={styles.sheetOutlineButtonText}>Dismiss</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+type RecoveryCardProps = {
+  missedHabits: Habit[];
+  onRecoveryTiny: (habit: Habit) => void;
+  onDismiss: (habit: Habit) => void;
+  onDismissAll: () => void;
+};
+
+function RecoveryCard({ missedHabits, onRecoveryTiny, onDismiss, onDismissAll }: RecoveryCardProps) {
+  const isSingle = missedHabits.length === 1;
+  const singleHabit = missedHabits[0];
+  const firstHabit = missedHabits[0];
+
+  return (
+    <View style={styles.recoveryCard}>
+      {isSingle ? (
+        <>
+          <Text style={styles.recoveryTag}>Recovery needed</Text>
+          <Text style={styles.recoveryCardTitle}>Keep going with {singleHabit.name}.</Text>
+          <Text style={styles.recoveryCardSubtext}>
+            You missed yesterday. The tiny version keeps your momentum alive.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.recoveryCardPrimary, pressed && styles.buttonPressed]}
+            onPress={() => onRecoveryTiny(singleHabit)}>
+            <Text style={styles.recoveryCardPrimaryText} numberOfLines={2}>
+              {singleHabit.tiny_version}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.recoveryCardOutline, pressed && styles.buttonPressed]}
+            onPress={() => onDismiss(singleHabit)}>
+            <Text style={styles.recoveryCardOutlineText}>Continue today</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.recoveryCardOutline, pressed && styles.buttonPressed]}
+            onPress={() => undefined}>
+            <Text style={styles.recoveryCardOutlineText}>Adjust habit</Text>
+          </Pressable>
+        </>
+      ) : (
+        <>
+          <Text style={styles.recoveryCardTitle}>A few habits need attention.</Text>
+          <Text style={styles.recoveryCardSubtext}>
+            You missed {missedHabits.length} habits yesterday. Choose one small action.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.recoveryCardPrimary, pressed && styles.buttonPressed]}
+            onPress={() => onRecoveryTiny(firstHabit)}>
+            <Text style={styles.recoveryCardPrimaryText}>
+              Start with {firstHabit.name}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.recoveryCardOutline, pressed && styles.buttonPressed]}
+            onPress={onDismissAll}>
+            <Text style={styles.recoveryCardOutlineText}>Dismiss</Text>
+          </Pressable>
+        </>
+      )}
+    </View>
+  );
 }
 
 const cellStatusStyles = StyleSheet.create({
@@ -231,7 +368,14 @@ export default function MomentumScreen() {
   const [viewMonth, setViewMonth] = useState(currentMonth);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [monthLogs, setMonthLogs] = useState<Record<string, HabitLog[]>>({});
+  const [missedHabits, setMissedHabits] = useState<Habit[]>([]);
+  const [selectedMissedCell, setSelectedMissedCell] = useState<MissedDaySelection | null>(null);
   const [loading, setLoading] = useState(true);
+  const yesterday = useMemo(() => getYesterdayDateString(), []);
+  const todayString = useMemo(
+    () => formatDateString(currentYear, currentMonth, today),
+    [currentYear, currentMonth, today],
+  );
 
   const daysInMonth = useMemo(
     () => getDaysInMonth(viewYear, viewMonth),
@@ -256,9 +400,10 @@ export default function MomentumScreen() {
       const habitsData = await fetchActiveHabits();
       if (cancelled) return;
 
-      const logsResults = await Promise.all(
-        habitsData.map((habit) => fetchMonthLogs(habit.habit_id, viewYear, viewMonth)),
-      );
+      const [logsResults, missed] = await Promise.all([
+        Promise.all(habitsData.map((habit) => fetchMonthLogs(habit.habit_id, viewYear, viewMonth))),
+        fetchMissedHabits(habitsData),
+      ]);
 
       const logsByHabitId = habitsData.reduce<Record<string, HabitLog[]>>((acc, habit, index) => {
         acc[habit.habit_id] = logsResults[index];
@@ -269,6 +414,7 @@ export default function MomentumScreen() {
 
       setHabits(habitsData);
       setMonthLogs(logsByHabitId);
+      setMissedHabits(missed);
       setLoading(false);
     }
 
@@ -312,6 +458,101 @@ export default function MomentumScreen() {
       return month + 1;
     });
   }, []);
+
+  const removeHabitFromMissed = useCallback((habitId: string) => {
+    setMissedHabits((current) => current.filter((habit) => habit.habit_id !== habitId));
+  }, []);
+
+  const applyRecoveredToMonthLogs = useCallback(
+    (habit: Habit) => {
+      const now = new Date().toISOString();
+      setMonthLogs((current) => {
+        const habitLogs = current[habit.habit_id] ?? [];
+        const existingIndex = habitLogs.findIndex((log) => log.date === todayString);
+        const recoveredLog: HabitLog = {
+          log_id: existingIndex >= 0 ? habitLogs[existingIndex].log_id : '',
+          habit_id: habit.habit_id,
+          user_id: habit.user_id,
+          date: todayString,
+          status: 'recovered',
+          completed_at: null,
+          is_retroactive_edit: false,
+          source: 'app',
+          notes: existingIndex >= 0 ? habitLogs[existingIndex].notes : null,
+          created_at: existingIndex >= 0 ? habitLogs[existingIndex].created_at : now,
+          updated_at: now,
+        };
+
+        const nextLogs =
+          existingIndex >= 0
+            ? habitLogs.map((log, index) => (index === existingIndex ? recoveredLog : log))
+            : [...habitLogs, recoveredLog];
+
+        return { ...current, [habit.habit_id]: nextLogs };
+      });
+    },
+    [todayString],
+  );
+
+  const handleRecoveryTiny = useCallback(
+    async (habit: Habit, missedDate: string = yesterday) => {
+      const success = await logRecovery({
+        habit,
+        missedDate,
+        recoveryType: 'tiny_version',
+      });
+      if (success) {
+        removeHabitFromMissed(habit.habit_id);
+        applyRecoveredToMonthLogs(habit);
+      }
+      return success;
+    },
+    [yesterday, removeHabitFromMissed, applyRecoveredToMonthLogs],
+  );
+
+  const handleDismissRecovery = useCallback(
+    async (habit: Habit, missedDate: string = yesterday) => {
+      await dismissRecovery({ habit, missedDate });
+      removeHabitFromMissed(habit.habit_id);
+    },
+    [yesterday, removeHabitFromMissed],
+  );
+
+  const handleDismissAllRecovery = useCallback(async () => {
+    await Promise.all(
+      missedHabits.map((habit) => dismissRecovery({ habit, missedDate: yesterday })),
+    );
+    setMissedHabits([]);
+  }, [missedHabits, yesterday]);
+
+  const handleMissedCellPress = useCallback((habit: Habit, day: number) => {
+    setSelectedMissedCell({
+      habit,
+      date: formatDateString(viewYear, viewMonth, day),
+    });
+  }, [viewYear, viewMonth]);
+
+  const handleSheetTinyRecovery = useCallback(async () => {
+    if (!selectedMissedCell) return;
+
+    const success = await handleRecoveryTiny(
+      selectedMissedCell.habit,
+      selectedMissedCell.date,
+    );
+    if (success) {
+      setSelectedMissedCell(null);
+    }
+  }, [selectedMissedCell, handleRecoveryTiny]);
+
+  const handleSheetDismiss = useCallback(async () => {
+    if (!selectedMissedCell) return;
+
+    await dismissRecovery({
+      habit: selectedMissedCell.habit,
+      missedDate: selectedMissedCell.date,
+    });
+    setSelectedMissedCell(null);
+  }, [selectedMissedCell]);
 
   if (loading) {
     return (
@@ -366,22 +607,30 @@ export default function MomentumScreen() {
                 const logs = monthLogs[habit.habit_id] ?? [];
                 return (
                   <View key={habit.habit_id} style={styles.daysRow}>
-                    {days.map((day) => (
-                      <GridCell
-                        key={`${habit.habit_id}-${day}`}
-                        status={getCellStatus(
-                          habit,
-                          day,
-                          viewYear,
-                          viewMonth,
-                          logs,
-                          today,
-                          currentYear,
-                          currentMonth,
-                        )}
-                        isToday={isViewingCurrentMonth && day === today}
-                      />
-                    ))}
+                    {days.map((day) => {
+                      const status = getCellStatus(
+                        habit,
+                        day,
+                        viewYear,
+                        viewMonth,
+                        logs,
+                        today,
+                        currentYear,
+                        currentMonth,
+                      );
+                      return (
+                        <GridCell
+                          key={`${habit.habit_id}-${day}`}
+                          status={status}
+                          isToday={isViewingCurrentMonth && day === today}
+                          onPress={
+                            status === 'missed'
+                              ? () => handleMissedCellPress(habit, day)
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
                   </View>
                 );
               })}
@@ -439,6 +688,15 @@ export default function MomentumScreen() {
           </View>
         </View>
 
+        {missedHabits.length > 0 ? (
+          <RecoveryCard
+            missedHabits={missedHabits}
+            onRecoveryTiny={(habit) => handleRecoveryTiny(habit)}
+            onDismiss={(habit) => handleDismissRecovery(habit)}
+            onDismissAll={handleDismissAllRecovery}
+          />
+        ) : null}
+
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>9 days ⚡</Text>
@@ -454,6 +712,16 @@ export default function MomentumScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {selectedMissedCell ? (
+        <MissedDaySheet
+          selection={selectedMissedCell}
+          bottomInset={insets.bottom}
+          onClose={() => setSelectedMissedCell(null)}
+          onTinyRecovery={handleSheetTinyRecovery}
+          onDismiss={handleSheetDismiss}
+        />
+      ) : null}
     </View>
   );
 }
@@ -574,6 +842,120 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: Colors.textSecondary,
+  },
+  cellPressed: {
+    opacity: 0.85,
+  },
+  recoveryCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.white,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.momentum,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  recoveryTag: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.momentum,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  recoveryCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  recoveryCardSubtext: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: Spacing.xs,
+  },
+  recoveryCardPrimary: {
+    backgroundColor: Colors.momentum,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  recoveryCardPrimaryText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  recoveryCardOutline: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+  recoveryCardOutlineText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  buttonPressed: {
+    opacity: 0.85,
+  },
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(26, 24, 20, 0.4)',
+  },
+  sheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.xl,
+    gap: Spacing.md,
+  },
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  sheetSubtext: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+  },
+  sheetDate: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginBottom: Spacing.sm,
+  },
+  sheetPrimaryButton: {
+    backgroundColor: Colors.momentum,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  sheetPrimaryButtonText: {
+    color: Colors.white,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sheetOutlineButton: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  sheetOutlineButtonText: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
   },
   statsRow: {
     flexDirection: 'row',
