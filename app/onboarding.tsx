@@ -1,10 +1,10 @@
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing } from '@/constants/theme';
 
 type OnboardingStep = 1 | 2 | 3 | 4 | 5;
 
@@ -157,6 +157,17 @@ export default function OnboardingScreen() {
           setSelectedHabits(habits);
           setStep(4);
         }}
+      />
+    );
+  }
+
+  if (step === 4) {
+    return (
+      <FirstWinScreen
+        bottomInset={insets.bottom}
+        topInset={insets.top}
+        habits={selectedHabits}
+        onContinue={() => setStep(5)}
       />
     );
   }
@@ -400,6 +411,112 @@ function HabitPickerScreen({ topInset, bottomInset, onBack, onContinue }: HabitP
             Build these habits →
           </Text>
         </Pressable>
+      </View>
+    </View>
+  );
+}
+
+type FirstWinScreenProps = {
+  topInset: number;
+  bottomInset: number;
+  habits: OnboardingHabit[];
+  onContinue: () => void;
+};
+
+function FirstWinScreen({ topInset, bottomInset, habits, onContinue }: FirstWinScreenProps) {
+  const [markedDone, setMarkedDone] = useState<string[]>([]);
+  const anyDone = markedDone.length > 0;
+
+  return (
+    <View style={[styles.screen, { paddingTop: topInset }]}>
+      <StepDots current={4} total={5} />
+
+      <ScrollView
+        contentContainerStyle={styles.firstWinScroll}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.firstWinHeader}>
+          <Text style={styles.firstWinHeadline}>
+            {anyDone ? "You're already building momentum." : 'Start today.'}
+          </Text>
+          <Text style={styles.firstWinSubtext}>
+            {anyDone
+              ? 'Day 1 is done. Keep going — every small step counts.'
+              : 'Mark your first habit as done to start your streak.'}
+          </Text>
+        </View>
+
+        <View style={styles.firstWinCards}>
+          {habits.map((habit) => {
+            const isDone = markedDone.includes(habit.id);
+            return (
+              <View
+                key={habit.id}
+                style={[styles.firstWinCard, isDone && styles.firstWinCardDone]}>
+                <View style={styles.firstWinCardLeft}>
+                  <View
+                    style={[
+                      styles.firstWinCircle,
+                      { backgroundColor: isDone ? Colors.done : habit.circleColor },
+                    ]}>
+                    <Text style={styles.firstWinCircleLetter}>{isDone ? '✓' : habit.letter}</Text>
+                  </View>
+                  <View style={styles.firstWinCardInfo}>
+                    <Text
+                      style={[styles.firstWinCardName, isDone && styles.firstWinCardNameDone]}>
+                      {habit.name}
+                    </Text>
+                    <Text style={styles.firstWinCardGoal}>{habit.goal}</Text>
+                  </View>
+                </View>
+                {!isDone ? (
+                  <Pressable
+                    onPress={() => setMarkedDone((current) => [...current, habit.id])}
+                    style={({ pressed }) => [
+                      styles.firstWinDoneButton,
+                      pressed && styles.buttonPressed,
+                    ]}>
+                    <Text style={styles.firstWinDoneButtonText}>Done</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.firstWinDoneTag}>
+                    <Text style={styles.firstWinDoneTagText}>Day 1 ⚡</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        {anyDone ? (
+          <View style={styles.recoveryPromise}>
+            <Text style={styles.recoveryPromiseTitle}>Your backup plan is ready.</Text>
+            <Text style={styles.recoveryPromiseText}>
+              If life gets in the way, a smaller version of each habit still keeps your momentum
+              going.
+            </Text>
+          </View>
+        ) : null}
+      </ScrollView>
+
+      <View style={[styles.pickerFooter, { paddingBottom: bottomInset + Spacing.lg }]}>
+        {anyDone ? (
+          <Pressable
+            onPress={onContinue}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.buttonPressed]}>
+            <Text style={styles.primaryButtonText}>Save my progress →</Text>
+          </Pressable>
+        ) : (
+          <>
+            <Text style={styles.skipHint}>
+              Mark at least one habit done to save your progress.
+            </Text>
+            <Pressable
+              onPress={onContinue}
+              style={({ pressed }) => [styles.ghostLink, pressed && styles.buttonPressed]}>
+              <Text style={styles.ghostLinkText}>I&apos;ll do it later →</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </View>
   );
@@ -671,5 +788,128 @@ const styles = StyleSheet.create({
   },
   primaryButtonTextDisabled: {
     color: Colors.textMuted,
+  },
+  firstWinScroll: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.xl,
+  },
+  firstWinHeader: {
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xl,
+  },
+  firstWinHeadline: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    color: Colors.textPrimary,
+    marginBottom: Spacing.sm,
+  },
+  firstWinSubtext: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    lineHeight: 24,
+  },
+  firstWinCards: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  firstWinCard: {
+    backgroundColor: Colors.white,
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    ...Shadows.card,
+  },
+  firstWinCardDone: {
+    backgroundColor: Colors.doneLight,
+    borderColor: Colors.done,
+  },
+  firstWinCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    flex: 1,
+  },
+  firstWinCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  firstWinCircleLetter: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  firstWinCardInfo: {
+    flex: 1,
+  },
+  firstWinCardName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  firstWinCardNameDone: {
+    color: Colors.done,
+  },
+  firstWinCardGoal: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  firstWinDoneButton: {
+    backgroundColor: Colors.done,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    flexShrink: 0,
+  },
+  firstWinDoneButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  firstWinDoneTag: {
+    backgroundColor: Colors.doneLight,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    flexShrink: 0,
+  },
+  firstWinDoneTagText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.done,
+  },
+  recoveryPromise: {
+    backgroundColor: Colors.momentumLight,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.momentum,
+  },
+  recoveryPromiseTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginBottom: Spacing.xs,
+  },
+  recoveryPromiseText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  skipHint: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+    lineHeight: 18,
   },
 });
