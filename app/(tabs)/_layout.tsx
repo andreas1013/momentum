@@ -1,9 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
+import { SymbolView } from 'expo-symbols';
 import { Tabs } from 'expo-router';
 
-const TAB_BACKGROUND = '#F7F4EF';
-const TAB_ACTIVE = '#3D7A5E';
-const TAB_INACTIVE = '#A09A94';
+import { Colors } from '@/constants/theme';
+
+const TAB_ACTIVE = Colors.done;
+const TAB_INACTIVE = Colors.textMuted;
 
 export default function TabLayout() {
   return (
@@ -14,11 +15,12 @@ export default function TabLayout() {
         tabBarActiveTintColor: TAB_ACTIVE,
         tabBarInactiveTintColor: TAB_INACTIVE,
         tabBarStyle: {
-          backgroundColor: TAB_BACKGROUND,
-          borderTopColor: '#E8E3DC',
+          backgroundColor: 'rgba(247,244,239,0.92)',
+          borderTopColor: Colors.border,
+          borderTopWidth: 1,
         },
         sceneStyle: {
-          backgroundColor: TAB_BACKGROUND,
+          backgroundColor: Colors.cream,
         },
       }}>
       <Tabs.Screen
@@ -26,7 +28,11 @@ export default function TabLayout() {
         options={{
           title: 'Today',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="checkmark-circle-outline" size={size} color={color} />
+            <SymbolView
+              name={{ ios: 'checkmark.circle', android: 'check_circle' }}
+              size={size}
+              tintColor={color}
+            />
           ),
         }}
       />
@@ -35,7 +41,11 @@ export default function TabLayout() {
         options={{
           title: 'Momentum',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trending-up-outline" size={size} color={color} />
+            <SymbolView
+              name={{ ios: 'chart.line.uptrend.xyaxis', android: 'trending_up' }}
+              size={size}
+              tintColor={color}
+            />
           ),
         }}
       />
@@ -44,7 +54,11 @@ export default function TabLayout() {
         options={{
           title: 'Insights',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart-outline" size={size} color={color} />
+            <SymbolView
+              name={{ ios: 'chart.bar', android: 'bar_chart' }}
+              size={size}
+              tintColor={color}
+            />
           ),
         }}
       />
@@ -53,7 +67,11 @@ export default function TabLayout() {
         options={{
           title: 'Habits',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list-outline" size={size} color={color} />
+            <SymbolView
+              name={{ ios: 'list.bullet', android: 'list' }}
+              size={size}
+              tintColor={color}
+            />
           ),
         }}
       />

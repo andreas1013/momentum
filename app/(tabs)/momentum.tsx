@@ -1,4 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { SymbolView } from 'expo-symbols';
 import { fetchActiveHabits, fetchMonthLogs, signInTestUser } from '@/lib/habits';
 import {
   dismissRecovery,
@@ -21,7 +22,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing } from '@/constants/theme';
 
 const CELL_SIZE = 28;
 const CELL_GAP = 4;
@@ -240,7 +241,10 @@ function MissedDaySheet({
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalRoot}>
         <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: bottomInset + Spacing.lg }]}>
+        <BlurView
+          intensity={80}
+          tint="light"
+          style={[styles.sheet, { paddingBottom: bottomInset + Spacing.lg }]}>
           <Text style={styles.sheetTitle}>{selection.habit.name}</Text>
           <Text style={styles.sheetSubtext}>You missed this day.</Text>
           <Text style={styles.sheetDate}>{formatDisplayDate(selection.date)}</Text>
@@ -256,7 +260,7 @@ function MissedDaySheet({
             onPress={onDismiss}>
             <Text style={styles.sheetOutlineButtonText}>Dismiss</Text>
           </Pressable>
-        </View>
+        </BlurView>
       </View>
     </Modal>
   );
@@ -572,14 +576,22 @@ export default function MomentumScreen() {
             onPress={goToPreviousMonth}
             style={({ pressed }) => [styles.monthArrow, pressed && styles.monthArrowPressed]}
             hitSlop={Spacing.sm}>
-            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
+            <SymbolView
+              name={{ ios: 'chevron.left', android: 'arrow_back' }}
+              size={22}
+              tintColor={Colors.textPrimary}
+            />
           </Pressable>
           <Text style={styles.monthTitle}>{formatMonthYear(viewYear, viewMonth)}</Text>
           <Pressable
             onPress={goToNextMonth}
             style={({ pressed }) => [styles.monthArrow, pressed && styles.monthArrowPressed]}
             hitSlop={Spacing.sm}>
-            <Ionicons name="chevron-forward" size={22} color={Colors.textPrimary} />
+            <SymbolView
+              name={{ ios: 'chevron.right', android: 'arrow_forward' }}
+              size={22}
+              tintColor={Colors.textPrimary}
+            />
           </Pressable>
         </View>
 
@@ -847,12 +859,13 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   recoveryCard: {
+    ...Shadows.card,
     marginHorizontal: Spacing.lg,
     marginTop: Spacing.lg,
     backgroundColor: Colors.white,
     borderLeftWidth: 4,
     borderLeftColor: Colors.momentum,
-    borderRadius: Radius.md,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.lg,
@@ -913,9 +926,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(26, 24, 20, 0.4)',
   },
   sheet: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
+    borderTopLeftRadius: Radius.xxl,
+    borderTopRightRadius: Radius.xxl,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.6)',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.xl,
     gap: Spacing.md,
@@ -964,9 +979,10 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.lg,
   },
   statCard: {
+    ...Shadows.card,
     flex: 1,
     backgroundColor: Colors.white,
-    borderRadius: Radius.md,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     paddingVertical: Spacing.md,

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing } from '@/constants/theme';
 
 const TEST_USER_ID = '3f550a2e-613e-4fa4-93ed-b0180ab5f7b2';
 const BAR_CHART_MAX_HEIGHT = 120;
@@ -387,10 +387,11 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   sectionCard: {
+    ...Shadows.card,
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.md,
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.lg,
@@ -447,9 +448,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   statCard: {
+    ...Shadows.card,
     flex: 1,
     backgroundColor: Colors.white,
-    borderRadius: Radius.md,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.lg,
@@ -470,9 +472,10 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   attentionCard: {
+    ...Shadows.card,
     marginHorizontal: Spacing.lg,
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.lg,

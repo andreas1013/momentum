@@ -31,11 +31,34 @@ export const Spacing = {
   xxl: 32,
 };
 
+export const Shadows = {
+  card: {
+    shadowColor: '#1A1814',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  cardOuter: {
+    shadowColor: '#1A1814',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+  },
+  sheet: {
+    shadowColor: '#1A1814',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+  },
+};
+
 export const Radius = {
   sm: 8,
   md: 12,
   lg: 16,
   xl: 20,
+  xxl: 28,
   pill: 100,
 };
 

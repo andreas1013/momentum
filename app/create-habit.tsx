@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { SymbolView } from 'expo-symbols';
 import { signInTestUser } from '@/lib/habits';
 import { supabase } from '@/lib/supabase';
 import type { ScheduleType } from '@/types/database';
@@ -181,7 +181,11 @@ export default function CreateHabitScreen() {
           onPress={handleBack}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
           hitSlop={Spacing.sm}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
+          <SymbolView
+            name={{ ios: 'chevron.left', android: 'arrow_back' }}
+            size={24}
+            tintColor={Colors.textPrimary}
+          />
         </Pressable>
         <Text style={styles.headerTitle}>New Habit</Text>
         <View style={styles.headerSpacer} />
@@ -457,8 +461,8 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: Colors.done,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.lg,
+    borderRadius: Radius.pill,
+    paddingVertical: 17,
     alignItems: 'center',
   },
   saveButtonDisabled: {

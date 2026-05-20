@@ -1,4 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { SymbolView } from 'expo-symbols';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { fetchActiveHabits, signInTestUser } from '@/lib/habits';
 import type { Habit, ScheduleType } from '@/types/database';
@@ -16,7 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing } from '@/constants/theme';
 
 function formatScheduleLabel(scheduleType: ScheduleType): string {
   switch (scheduleType) {
@@ -96,32 +97,51 @@ function HabitActionSheet({ habit, onClose, bottomInset }: HabitActionSheetProps
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalRoot}>
         <Pressable style={styles.modalBackdrop} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: bottomInset + Spacing.lg }]}>
+        <BlurView
+          intensity={80}
+          tint="light"
+          style={[styles.sheet, { paddingBottom: bottomInset + Spacing.lg }]}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{habit.name}</Text>
             <Pressable
               onPress={onClose}
               style={({ pressed }) => [styles.sheetCloseButton, pressed && styles.menuButtonPressed]}
               hitSlop={Spacing.sm}>
-              <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              <SymbolView
+                name={{ ios: 'xmark', android: 'close' }}
+                size={22}
+                tintColor={Colors.textSecondary}
+              />
             </Pressable>
           </View>
 
           <Pressable style={({ pressed }) => [styles.sheetOption, pressed && styles.sheetOptionPressed]}>
-            <Ionicons name="pencil-outline" size={20} color={Colors.textPrimary} />
+            <SymbolView
+              name={{ ios: 'pencil', android: 'edit' }}
+              size={20}
+              tintColor={Colors.textPrimary}
+            />
             <Text style={styles.sheetOptionText}>Edit habit</Text>
           </Pressable>
 
           <Pressable style={({ pressed }) => [styles.sheetOption, pressed && styles.sheetOptionPressed]}>
-            <Ionicons name="pause-outline" size={20} color={Colors.textPrimary} />
+            <SymbolView
+              name={{ ios: 'pause.circle', android: 'pause_circle' }}
+              size={20}
+              tintColor={Colors.textPrimary}
+            />
             <Text style={styles.sheetOptionText}>Pause habit</Text>
           </Pressable>
 
           <Pressable style={({ pressed }) => [styles.sheetOption, pressed && styles.sheetOptionPressed]}>
-            <Ionicons name="archive-outline" size={20} color={Colors.textPrimary} />
+            <SymbolView
+              name={{ ios: 'archivebox', android: 'archive' }}
+              size={20}
+              tintColor={Colors.textPrimary}
+            />
             <Text style={styles.sheetOptionText}>Archive habit</Text>
           </Pressable>
-        </View>
+        </BlurView>
       </View>
     </Modal>
   );
@@ -193,7 +213,7 @@ export default function HabitsScreen() {
           <Pressable
             style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
             onPress={() => router.push('/create-habit')}>
-            <Ionicons name="add" size={26} color={Colors.white} />
+            <SymbolView name={{ ios: 'plus', android: 'add' }} size={26} tintColor={Colors.white} />
           </Pressable>
         </View>
 
@@ -288,8 +308,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xl,
   },
   habitCard: {
+    ...Shadows.card,
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.lg,
@@ -359,9 +380,11 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   sheet: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
+    borderTopLeftRadius: Radius.xxl,
+    borderTopRightRadius: Radius.xxl,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.6)',
     paddingTop: Spacing.lg,
     paddingHorizontal: Spacing.lg,
     gap: Spacing.xs,

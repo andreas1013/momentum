@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing } from '@/constants/theme';
 
 type UiHabitStatus = HabitStatus | 'pending';
 
@@ -562,8 +562,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   card: {
+    ...Shadows.card,
     backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.border,
     padding: Spacing.lg,
@@ -597,18 +598,20 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   doneButton: {
     backgroundColor: Colors.done,
+    borderRadius: Radius.pill,
+    paddingVertical: 17,
   },
   tinyButton: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
     borderColor: Colors.tiny,
+    borderRadius: Radius.pill,
+    paddingVertical: 17,
   },
   buttonPressed: {
     opacity: 0.85,
@@ -678,8 +681,8 @@ const styles = StyleSheet.create({
   recoveryPrimaryButton: {
     flex: 1,
     backgroundColor: Colors.momentum,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.md,
+    borderRadius: Radius.pill,
+    paddingVertical: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
