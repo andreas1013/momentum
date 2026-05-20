@@ -1,10 +1,11 @@
 import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, Radius, Shadows, Spacing } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 
 type OnboardingStep = 1 | 2 | 3 | 4 | 5;
 
@@ -172,7 +173,18 @@ export default function OnboardingScreen() {
     );
   }
 
-  return <View style={[styles.screen, { paddingTop: insets.top }]} />;
+  if (step === 5) {
+    return (
+      <AuthScreen
+        bottomInset={insets.bottom}
+        topInset={insets.top}
+        selectedHabits={selectedHabits}
+        onBack={() => setStep(4)}
+      />
+    );
+  }
+
+  return null;
 }
 
 type ScreenLayoutProps = {
@@ -517,6 +529,247 @@ function FirstWinScreen({ topInset, bottomInset, habits, onContinue }: FirstWinS
             </Pressable>
           </>
         )}
+      </View>
+    </View>
+  );
+}
+
+type AuthScreenProps = {
+  topInset: number;
+  bottomInset: number;
+  selectedHabits: OnboardingHabit[];
+  onBack: () => void;
+};
+
+function AuthScreen({ topInset, bottomInset, selectedHabits, onBack }: AuthScreenProps) {
+  const router = useRouter();
+  const [mode, setMode] = useState<'options' | 'email-signup' | 'email-login'>('options');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function saveHabitsForUser(userId: string) {
+    const TEST_USER_ID = userId;
+
+    await supabase.from('users').upsert({
+      user_id: userId,
+      timezone: 'UTC',
+    });
+
+    const habitsToInsert = selectedHabits
+      .filter((h) => h.id !== 'custom')
+      .map((h) => ({
+        user_id: TEST_USER_ID,
+        name: h.name,
+        schedule_type: h.scheduleType,
+        schedule_days: h.scheduleDays,
+        tiny_version: h.tinyVersion,
+        reminder_enabled: false,
+        status: 'active',
+        category: null,
+      }));
+
+    if (habitsToInsert.length > 0) {
+      await supabase.from('habits').insert(habitsToInsert);
+    }
+  }
+
+  async function handleEmailSignUp() {
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and a password.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    const { data, error: authError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    if (data.user) {
+      await saveHabitsForUser(data.user.id);
+    }
+
+    setLoading(false);
+    router.replace('/(tabs)/today');
+  }
+
+  async function handleEmailLogin() {
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and password.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(false);
+    router.replace('/(tabs)/today');
+  }
+
+  if (mode === 'options') {
+    return (
+      <View style={[styles.screen, { paddingTop: topInset }]}>
+        <StepDots current={5} total={5} />
+
+        <View style={styles.pickerHeader}>
+          <Pressable
+            onPress={onBack}
+            style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
+            hitSlop={Spacing.sm}>
+            <Text style={styles.backChevron}>‹</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.authContent}>
+          <View style={{ alignItems: 'center', marginBottom: Spacing.xl }}>
+            <View style={styles.logo}>
+              <Text style={styles.logoText}>↑</Text>
+            </View>
+          </View>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={styles.headline}>Save your{'\n'}progress.</Text>
+            <Text style={styles.subtext}>
+              Create a free account to keep your habits{'\n'}
+              safe and sync across your devices.
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.authFooter, { paddingBottom: bottomInset + Spacing.lg }]}>
+          <Pressable
+            style={({ pressed }) => [styles.appleButton, pressed && styles.buttonPressed]}
+            onPress={() => setMode('email-signup')}>
+            <Text style={styles.appleButtonText}>Continue with Apple</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.googleButton, pressed && styles.buttonPressed]}
+            onPress={() => setMode('email-signup')}>
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </Pressable>
+
+          <Text style={styles.comingSoonNote}>Apple and Google sign-in coming soon</Text>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <Pressable
+            onPress={() => setMode('email-signup')}
+            style={({ pressed }) => [styles.emailLink, pressed && styles.buttonPressed]}>
+            <Text style={styles.emailLinkText}>Continue with Email</Text>
+          </Pressable>
+
+          <Text style={styles.authFooterNote}>
+            Already have an account?{' '}
+            <Text style={styles.authFooterLink} onPress={() => setMode('email-login')}>
+              Log in
+            </Text>
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.screen, { paddingTop: topInset }]}>
+      <StepDots current={5} total={5} />
+
+      <View style={styles.pickerHeader}>
+        <Pressable
+          onPress={() => {
+            setMode('options');
+            setError(null);
+          }}
+          style={({ pressed }) => [styles.backButton, pressed && styles.buttonPressed]}
+          hitSlop={Spacing.sm}>
+          <Text style={styles.backChevron}>‹</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.authFormBlock}>
+        <Text style={styles.pickerHeadline}>
+          {mode === 'email-signup' ? 'Create your account.' : 'Welcome back.'}
+        </Text>
+        <Text style={styles.pickerSubtext}>
+          {mode === 'email-signup'
+            ? 'Your habits and progress will be saved securely.'
+            : 'Log in to access your habits and progress.'}
+        </Text>
+      </View>
+
+      <View style={styles.authForm}>
+        <TextInput
+          style={styles.textInput}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email address"
+          placeholderTextColor={Colors.textMuted}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TextInput
+          style={styles.textInput}
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Password (min 8 characters)"
+          placeholderTextColor={Colors.textMuted}
+          secureTextEntry
+        />
+        {error ? <Text style={styles.authError}>{error}</Text> : null}
+      </View>
+
+      <View style={[styles.pickerFooter, { paddingBottom: bottomInset + Spacing.lg }]}>
+        <Pressable
+          onPress={mode === 'email-signup' ? handleEmailSignUp : handleEmailLogin}
+          disabled={loading}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            loading && styles.primaryButtonDisabled,
+            pressed && !loading && styles.buttonPressed,
+          ]}>
+          <Text style={[styles.primaryButtonText, loading && styles.primaryButtonTextDisabled]}>
+            {loading
+              ? 'Saving...'
+              : mode === 'email-signup'
+                ? 'Create account →'
+                : 'Log in →'}
+          </Text>
+        </Pressable>
+
+        {mode === 'email-signup' ? (
+          <Pressable
+            onPress={() => setMode('email-login')}
+            style={({ pressed }) => [styles.ghostLink, pressed && styles.buttonPressed]}>
+            <Text style={styles.ghostLinkText}>Already have an account? Log in</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -911,5 +1164,133 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.sm,
     lineHeight: 18,
+  },
+  authContent: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: '22%',
+    paddingBottom: Spacing.xxl,
+  },
+  authFooter: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.md,
+    gap: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  comingSoonNote: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: -Spacing.xs,
+  },
+  appleButton: {
+    backgroundColor: '#000000',
+    borderRadius: Radius.pill,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  appleButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  appleIcon: {
+    fontSize: 18,
+    color: Colors.white,
+    lineHeight: 22,
+  },
+  googleButton: {
+    backgroundColor: Colors.white,
+    borderRadius: Radius.pill,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  googleButtonText: {
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  authButtonIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleIcon: {
+    backgroundColor: '#4285F4',
+  },
+  googleIconText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginVertical: Spacing.xs,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.border,
+  },
+  dividerText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  emailLink: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  emailLinkText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  authFooterNote: {
+    textAlign: 'center',
+    fontSize: 13,
+    color: Colors.textMuted,
+    paddingBottom: Spacing.sm,
+  },
+  authFooterLink: {
+    color: Colors.done,
+    fontWeight: '600',
+  },
+  authFormBlock: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xl,
+  },
+  authForm: {
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+    flex: 1,
+  },
+  textInput: {
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    fontSize: 16,
+    color: Colors.textPrimary,
+  },
+  authError: {
+    fontSize: 14,
+    color: Colors.missed,
+    marginTop: Spacing.xs,
   },
 });
