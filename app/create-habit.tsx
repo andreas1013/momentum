@@ -1,5 +1,3 @@
-import { SymbolView } from 'expo-symbols';
-import { signInTestUser } from '@/lib/habits';
 import { supabase } from '@/lib/supabase';
 import type { ScheduleType } from '@/types/database';
 import { useRouter } from 'expo-router';
@@ -18,8 +16,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors, Radius, Spacing } from '@/constants/theme';
-
-const TEST_USER_ID = '3f550a2e-613e-4fa4-93ed-b0180ab5f7b2';
 
 const QUICK_HABIT_NAMES = [
   'Walk',
@@ -77,12 +73,14 @@ async function saveHabit(params: {
   reminderEnabled: boolean;
   reminderTime: string;
 }): Promise<{ success: boolean }> {
-  await signInTestUser();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user?.id;
+  if (!userId) return { success: false };
 
   const scheduleDays = getScheduleDays(params.scheduleType, params.customDays);
 
   const { error } = await supabase.from('habits').insert({
-    user_id: TEST_USER_ID,
+    user_id: userId,
     name: params.name.trim(),
     schedule_type: params.scheduleType,
     schedule_days: scheduleDays,
@@ -181,11 +179,7 @@ export default function CreateHabitScreen() {
           onPress={handleBack}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
           hitSlop={Spacing.sm}>
-          <SymbolView
-            name={{ ios: 'chevron.left', android: 'arrow_back' }}
-            size={24}
-            tintColor={Colors.textPrimary}
-          />
+          <Text style={{ fontSize: 28, color: Colors.textPrimary, fontWeight: '300' }}>‹</Text>
         </Pressable>
         <Text style={styles.headerTitle}>New Habit</Text>
         <View style={styles.headerSpacer} />

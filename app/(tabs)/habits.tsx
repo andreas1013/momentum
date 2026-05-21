@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -213,7 +214,7 @@ export default function HabitsScreen() {
           <Pressable
             style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
             onPress={() => router.push('/create-habit')}>
-            <SymbolView name={{ ios: 'plus', android: 'add' }} size={26} tintColor={Colors.white} />
+            <Ionicons name="add" size={26} color={Colors.white} />
           </Pressable>
         </View>
 

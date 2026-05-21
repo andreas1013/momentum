@@ -1,4 +1,4 @@
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
 import { Colors } from '@/constants/theme';
@@ -28,11 +28,7 @@ export default function TabLayout() {
         options={{
           title: 'Today',
           tabBarIcon: ({ color, size }) => (
-            <SymbolView
-              name={{ ios: 'checkmark.circle', android: 'check_circle' }}
-              size={size}
-              tintColor={color}
-            />
+            <Ionicons name="checkmark-circle-outline" size={size} color={color} />
           ),
         }}
       />
@@ -41,11 +37,7 @@ export default function TabLayout() {
         options={{
           title: 'Momentum',
           tabBarIcon: ({ color, size }) => (
-            <SymbolView
-              name={{ ios: 'chart.line.uptrend.xyaxis', android: 'trending_up' }}
-              size={size}
-              tintColor={color}
-            />
+            <Ionicons name="trending-up-outline" size={size} color={color} />
           ),
         }}
       />
@@ -54,11 +46,7 @@ export default function TabLayout() {
         options={{
           title: 'Insights',
           tabBarIcon: ({ color, size }) => (
-            <SymbolView
-              name={{ ios: 'chart.bar', android: 'bar_chart' }}
-              size={size}
-              tintColor={color}
-            />
+            <Ionicons name="bar-chart-outline" size={size} color={color} />
           ),
         }}
       />
@@ -67,11 +55,7 @@ export default function TabLayout() {
         options={{
           title: 'Habits',
           tabBarIcon: ({ color, size }) => (
-            <SymbolView
-              name={{ ios: 'list.bullet', android: 'list' }}
-              size={size}
-              tintColor={color}
-            />
+            <Ionicons name="list-outline" size={size} color={color} />
           ),
         }}
       />
