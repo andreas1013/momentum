@@ -1,14 +1,15 @@
+import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { SymbolView } from 'expo-symbols';
-import { fetchActiveHabits, fetchMonthLogs, signInTestUser } from '@/lib/habits';
+import { fetchActiveHabits, fetchAllLogs, fetchMonthLogs, signInTestUser } from '@/lib/habits';
 import {
   dismissRecovery,
   fetchMissedHabits,
   getYesterdayDateString,
   logRecovery,
 } from '@/lib/recovery';
-import { getMonthlyConsistency, isScheduledToday } from '@/lib/streaks';
+import { calculateStreaks, getMonthlyConsistency, isScheduledToday } from '@/lib/streaks';
 import type { DayRecord } from '@/lib/streaks';
+import type { HabitStatus } from '@/types/database';
 import type { Habit, HabitLog } from '@/types/database';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -187,6 +188,75 @@ function getSummaryTextColor(percent: number): string {
   if (percent >= 80) return Colors.done;
   if (percent >= 50) return Colors.tiny;
   return Colors.textMuted;
+}
+
+function getHeroStatement(
+  momentumCurrent: number,
+  missedYesterday: boolean,
+  totalLogs: number,
+): string {
+  if (totalLogs === 0) return 'Your story starts here.';
+  if (missedYesterday) return 'Still here. Let\'s keep going.';
+  if (momentumCurrent >= 14) return `${momentumCurrent} days strong. You\'re building something real.`;
+  if (momentumCurrent >= 7) return `You\'re on a roll. ${momentumCurrent} days strong.`;
+  if (momentumCurrent >= 3) return `Building momentum. ${momentumCurrent} days and counting.`;
+  if (momentumCurrent >= 1) return `Day ${momentumCurrent}. Every day counts.`;
+  return 'Keep going. Every small step counts.';
+}
+
+function getInsightCard(
+  habits: Habit[],
+  monthLogs: Record<string, HabitLog[]>,
+  momentumCurrent: number,
+  tinyCount: number,
+): string | null {
+  if (habits.length === 0) return null;
+
+  let bestHabit = '';
+  let bestPct = 0;
+  habits.forEach((habit) => {
+    const logs = monthLogs[habit.habit_id] ?? [];
+    const done = logs.filter(
+      (l) => l.status === 'done' || l.status === 'tiny_done' || l.status === 'recovered',
+    ).length;
+    const total = logs.length;
+    if (total > 0) {
+      const pct = done / total;
+      if (pct > bestPct) {
+        bestPct = pct;
+        bestHabit = habit.name;
+      }
+    }
+  });
+
+  if (tinyCount >= 3) return `Showing up on hard days is the real habit. You\'ve done it ${tinyCount} times.`;
+  if (momentumCurrent >= 5 && bestHabit) return `${bestHabit} is your strongest habit right now. Keep it going.`;
+  if (momentumCurrent >= 2) return 'Consistency builds momentum. You\'re proving it.';
+  return 'The first days are the hardest. You\'re in them.';
+}
+
+const COMBINED_STATUS_RANK: Record<HabitStatus, number> = {
+  done: 6,
+  tiny_done: 5,
+  recovered: 4,
+  rest_day: 3,
+  skipped: 2,
+  missed: 1,
+};
+
+function buildCombinedDayRecords(logs: HabitLog[]): DayRecord[] {
+  const byDate = new Map<string, HabitStatus>();
+
+  for (const log of logs) {
+    const current = byDate.get(log.date);
+    if (!current || COMBINED_STATUS_RANK[log.status] > COMBINED_STATUS_RANK[current]) {
+      byDate.set(log.date, log.status);
+    }
+  }
+
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, status]) => ({ date, status }));
 }
 
 type GridCellProps = {
@@ -375,6 +445,12 @@ export default function MomentumScreen() {
   const [missedHabits, setMissedHabits] = useState<Habit[]>([]);
   const [selectedMissedCell, setSelectedMissedCell] = useState<MissedDaySelection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [momentumCurrent, setMomentumCurrent] = useState(0);
+  const [perfectCurrent, setPerfectCurrent] = useState(0);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [tinyCount, setTinyCount] = useState(0);
+  const [monthlyConsistency, setMonthlyConsistency] = useState(0);
+  const monthCache = useRef<Record<string, { logs: Record<string, HabitLog[]>; missed: Habit[] }>>({});
   const yesterday = useMemo(() => getYesterdayDateString(), []);
   const todayString = useMemo(
     () => formatDateString(currentYear, currentMonth, today),
@@ -397,16 +473,56 @@ export default function MomentumScreen() {
     let cancelled = false;
 
     async function loadData() {
-      setLoading(true);
+      const cacheKey = `${viewYear}-${viewMonth}`;
+
+      if (!monthCache.current[cacheKey]) {
+        setLoading(true);
+      }
 
       await signInTestUser();
 
       const habitsData = await fetchActiveHabits();
       if (cancelled) return;
 
-      const [logsResults, missed] = await Promise.all([
+      const userId = habitsData[0]?.user_id;
+      const allLogsPromise = userId ? fetchAllLogs(userId) : Promise.resolve([] as HabitLog[]);
+
+      const cached = monthCache.current[cacheKey];
+      if (cached) {
+        const allLogs = await allLogsPromise;
+        if (cancelled) return;
+
+        const combinedRecords = buildCombinedDayRecords(allLogs);
+        const streaks = calculateStreaks(combinedRecords);
+        const monthRecords = habitsData.flatMap((habit) =>
+          buildHabitMonthRecords(
+            habit,
+            cached.logs[habit.habit_id] ?? [],
+            viewYear,
+            viewMonth,
+            getDaysInMonth(viewYear, viewMonth),
+            today,
+            currentYear,
+            currentMonth,
+          ),
+        );
+
+        setHabits(habitsData);
+        setMonthLogs(cached.logs);
+        setMissedHabits(cached.missed);
+        setMomentumCurrent(streaks.momentumCurrent);
+        setPerfectCurrent(streaks.perfectCurrent);
+        setTotalLogs(allLogs.length);
+        setTinyCount(allLogs.filter((log) => log.status === 'tiny_done').length);
+        setMonthlyConsistency(getMonthlyConsistency(monthRecords));
+        setLoading(false);
+        return;
+      }
+
+      const [logsResults, missed, allLogs] = await Promise.all([
         Promise.all(habitsData.map((habit) => fetchMonthLogs(habit.habit_id, viewYear, viewMonth))),
         fetchMissedHabits(habitsData),
+        allLogsPromise,
       ]);
 
       const logsByHabitId = habitsData.reduce<Record<string, HabitLog[]>>((acc, habit, index) => {
@@ -416,9 +532,31 @@ export default function MomentumScreen() {
 
       if (cancelled) return;
 
+      monthCache.current[cacheKey] = { logs: logsByHabitId, missed };
+
+      const combinedRecords = buildCombinedDayRecords(allLogs);
+      const streaks = calculateStreaks(combinedRecords);
+      const monthRecords = habitsData.flatMap((habit) =>
+        buildHabitMonthRecords(
+          habit,
+          logsByHabitId[habit.habit_id] ?? [],
+          viewYear,
+          viewMonth,
+          getDaysInMonth(viewYear, viewMonth),
+          today,
+          currentYear,
+          currentMonth,
+        ),
+      );
+
       setHabits(habitsData);
       setMonthLogs(logsByHabitId);
       setMissedHabits(missed);
+      setMomentumCurrent(streaks.momentumCurrent);
+      setPerfectCurrent(streaks.perfectCurrent);
+      setTotalLogs(allLogs.length);
+      setTinyCount(allLogs.filter((log) => log.status === 'tiny_done').length);
+      setMonthlyConsistency(getMonthlyConsistency(monthRecords));
       setLoading(false);
     }
 
@@ -427,7 +565,7 @@ export default function MomentumScreen() {
     return () => {
       cancelled = true;
     };
-  }, [viewYear, viewMonth]);
+  }, [viewYear, viewMonth, today, currentYear, currentMonth]);
 
   const scrollToToday = useCallback(() => {
     if (!isViewingCurrentMonth) return;
@@ -558,6 +696,8 @@ export default function MomentumScreen() {
     setSelectedMissedCell(null);
   }, [selectedMissedCell]);
 
+  const insight = getInsightCard(habits, monthLogs, momentumCurrent, tinyCount);
+
   if (loading) {
     return (
       <View style={[styles.screen, styles.centered, { paddingTop: insets.top }]}>
@@ -571,27 +711,25 @@ export default function MomentumScreen() {
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}
         showsVerticalScrollIndicator={false}>
+        <View style={styles.heroSection}>
+          <Text style={styles.heroStatement}>
+            {getHeroStatement(momentumCurrent, missedHabits.length > 0, totalLogs)}
+          </Text>
+        </View>
+
         <View style={styles.monthHeader}>
           <Pressable
             onPress={goToPreviousMonth}
             style={({ pressed }) => [styles.monthArrow, pressed && styles.monthArrowPressed]}
             hitSlop={Spacing.sm}>
-            <SymbolView
-              name={{ ios: 'chevron.left', android: 'arrow_back' }}
-              size={22}
-              tintColor={Colors.textPrimary}
-            />
+            <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
           </Pressable>
           <Text style={styles.monthTitle}>{formatMonthYear(viewYear, viewMonth)}</Text>
           <Pressable
             onPress={goToNextMonth}
             style={({ pressed }) => [styles.monthArrow, pressed && styles.monthArrowPressed]}
             hitSlop={Spacing.sm}>
-            <SymbolView
-              name={{ ios: 'chevron.right', android: 'arrow_forward' }}
-              size={22}
-              tintColor={Colors.textPrimary}
-            />
+            <Ionicons name="chevron-forward" size={22} color={Colors.textPrimary} />
           </Pressable>
         </View>
 
@@ -700,6 +838,13 @@ export default function MomentumScreen() {
           </View>
         </View>
 
+        {insight ? (
+          <View style={styles.insightCard}>
+            <Text style={styles.insightLabel}>TODAY'S INSIGHT</Text>
+            <Text style={styles.insightText}>{insight}</Text>
+          </View>
+        ) : null}
+
         {missedHabits.length > 0 ? (
           <RecoveryCard
             missedHabits={missedHabits}
@@ -711,15 +856,15 @@ export default function MomentumScreen() {
 
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>9 days ⚡</Text>
+            <Text style={styles.statValue}>{momentumCurrent} days ⚡</Text>
             <Text style={styles.statLabel}>Momentum streak</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>5 days 🔥</Text>
+            <Text style={styles.statValue}>{perfectCurrent} days 🔥</Text>
             <Text style={styles.statLabel}>Perfect streak</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>83%</Text>
+            <Text style={styles.statValue}>{monthlyConsistency.toFixed(0)}%</Text>
             <Text style={styles.statLabel}>This month</Text>
           </View>
         </View>
@@ -746,6 +891,18 @@ const styles = StyleSheet.create({
   centered: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  heroSection: {
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.md,
+  },
+  heroStatement: {
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    color: Colors.textPrimary,
+    lineHeight: 32,
   },
   monthHeader: {
     flexDirection: 'row',
@@ -857,6 +1014,31 @@ const styles = StyleSheet.create({
   },
   cellPressed: {
     opacity: 0.85,
+  },
+  insightCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.white,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.done,
+    ...Shadows.card,
+  },
+  insightLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1,
+    color: Colors.done,
+    marginBottom: Spacing.xs,
+  },
+  insightText: {
+    fontSize: 15,
+    color: Colors.textPrimary,
+    lineHeight: 22,
+    fontWeight: '500',
   },
   recoveryCard: {
     ...Shadows.card,
