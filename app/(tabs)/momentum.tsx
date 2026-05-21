@@ -709,7 +709,7 @@ export default function MomentumScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.lg }}
+        contentContainerStyle={{ paddingBottom: Spacing.xl }}
         showsVerticalScrollIndicator={false}>
         <View style={styles.heroSection}>
           <Text style={styles.heroStatement}>
@@ -932,7 +932,7 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     flexDirection: 'row',
-    paddingLeft: Spacing.lg,
+    paddingLeft: Spacing.md,
     paddingRight: Spacing.sm,
   },
   fixedLeftColumn: {
@@ -963,7 +963,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollableContent: {
-    paddingLeft: 8,
+    paddingLeft: 4,
     paddingRight: Spacing.sm,
   },
   daysRow: {
@@ -1159,6 +1159,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
+    marginBottom: Spacing.xl,
   },
   statCard: {
     ...Shadows.card,
